@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: sentinelstack
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/sentinelstack}
+    username: ${SPRING_DATASOURCE_USERNAME:sentinel}
+    password: ${SPRING_DATASOURCE_PASSWORD:sentinel}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+  flyway:
+    enabled: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: ${SERVER_PORT:8080}
+  forward-headers-strategy: framework
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      instance: ${sentinel.instance-name}
+
+sentinel:
+  instance-name: ${INSTANCE_NAME:local}
+  checks:
+    enabled: ${CHECKS_ENABLED:true}
+    fixed-delay-ms: ${CHECKS_FIXED_DELAY_MS:60000}
+    timeout-ms: ${CHECKS_TIMEOUT_MS:10000}
+
+logging:
+  level:
+    com.sentinelstack: INFO
+    org.springframework.web: INFO

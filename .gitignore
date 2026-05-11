@@ -1,0 +1,11 @@
+.idea/
+.vscode/
+target/
+backend/target/
+.mvn/
+*.iml
+*.log
+.env
+docker-compose.override.yml
+grafana/data/
+postgres_data/

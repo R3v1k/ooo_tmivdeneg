@@ -1,0 +1,159 @@
+name: sentinelstack
+
+x-backend-common: &backend-common
+  build:
+    context: ./backend
+  image: sentinelstack-backend:latest
+  restart: unless-stopped
+  environment:
+    SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sentinelstack
+    SPRING_DATASOURCE_USERNAME: sentinel
+    SPRING_DATASOURCE_PASSWORD: sentinel
+    CHECKS_FIXED_DELAY_MS: 60000
+    CHECKS_TIMEOUT_MS: 10000
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+    interval: 15s
+    timeout: 5s
+    start_period: 45s
+    retries: 5
+  networks:
+    - sentinel_net
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sentinelstack-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sentinelstack
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinelstack"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sentinel_net
+
+  app1:
+    <<: *backend-common
+    container_name: sentinelstack-app1
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sentinelstack
+      SPRING_DATASOURCE_USERNAME: sentinel
+      SPRING_DATASOURCE_PASSWORD: sentinel
+      INSTANCE_NAME: app1
+      CHECKS_FIXED_DELAY_MS: 60000
+      CHECKS_TIMEOUT_MS: 10000
+
+  app2:
+    <<: *backend-common
+    container_name: sentinelstack-app2
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sentinelstack
+      SPRING_DATASOURCE_USERNAME: sentinel
+      SPRING_DATASOURCE_PASSWORD: sentinel
+      INSTANCE_NAME: app2
+      CHECKS_FIXED_DELAY_MS: 60000
+      CHECKS_TIMEOUT_MS: 10000
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: sentinelstack-nginx
+    restart: unless-stopped
+    depends_on:
+      app1:
+        condition: service_healthy
+      app2:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sentinel_net
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.1.0
+    container_name: sentinelstack-nginx-exporter
+    restart: unless-stopped
+    command:
+      - -nginx.scrape-uri=http://nginx/nginx_status
+    depends_on:
+      nginx:
+        condition: service_healthy
+    networks:
+      - sentinel_net
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: sentinelstack-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://sentinel:sentinel@postgres:5432/sentinelstack?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sentinel_net
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: sentinelstack-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      app1:
+        condition: service_healthy
+      app2:
+        condition: service_healthy
+      nginx-exporter:
+        condition: service_started
+      postgres-exporter:
+        condition: service_started
+    networks:
+      - sentinel_net
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: sentinelstack-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks:
+      - sentinel_net
+
+volumes:
+  postgres_data:
+  grafana_data:
+
+networks:
+  sentinel_net:
+    driver: bridge

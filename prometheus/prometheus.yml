@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: sentinelstack-apps
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - app1:8080
+          - app2:8080
+
+  - job_name: nginx
+    static_configs:
+      - targets:
+          - nginx-exporter:9113
+
+  - job_name: postgres
+    static_configs:
+      - targets:
+          - postgres-exporter:9187
